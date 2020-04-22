@@ -1,121 +1,132 @@
 const fs = require("fs");
+const path = require("path");
 const axios = require("axios");
 const inquirer = require("inquirer");
-const util = require('util');
-const puppeteer = require("puppeteer")
+const electron = require('electron-html-to');
 
-const writeFileAsync = util.promisify(fs.writeFile);
+// var conversion = electron({
+//     converterPath: electron.converters.PDF
+//   });
 
-function promptUser() {
-    return inquirer.prompt([{
-        type: "input",
-        name: "username",
-        message: "What is your github username?"
+
+let data = {};
+
+let questions = [
+    {
+        message: 'What is your github username?',
+        name: 'username',
     },
     {
-        type: "checkbox",
-        message: "What is your favorite color?",
-        name: "color",
-        choices: [
-            "red",
-            "blue",
-            "green",
-            "pink"
-        ]
-    }])
+        message: 'What is your favorite color',
+        name: 'color',
+        type: 'list',
+        choices: ['green', 'blue', 'pink', 'red'],
+    }
+]
+
+function init() {
+    inquirer
+    .prompt(questions)
+    .then(function ({username, color}) {
+      const queryUrl = `https://api.github.com/users/${username}`; 
+
+        axios
+            .get(queryUrl)
+            .then((res) => {    
+                switch(color) {
+                    case 'green':
+                        data.color = 0;
+                        break;
+                    case 'blue':
+                        data.color = 1;
+                        break;  
+                    case 'pink':
+                        data.color = 2;
+                        break;
+                    case 'red':
+                        data.color = 3;
+                        break;
+                }      
+                data.username = username;
+                data.numOfRepo = res.data.public_repos;
+                data.name = res.data.name
+                data.followers = res.data.followers;
+                data.following = res.data.following;
+                data.portPic = res.data.avatar_url;
+                data.location = res.data.location;
+                data.blog = res.data.blog; 
+                data.bio = res.data.bio
+                /////////
+                axios
+                    .get(`https://api.github.com/users/${username}/repos?per_page=100`)
+                    .then((res) => {
+                        data.stars = 0;
+                        for (let i = 0; i < res.data.length; i++) {
+                            data.stars += res.data[i].stargazers_count;
+                        }
+                        
+                        let resumeHTML = generateHTML(data);
+
+                        const conversion = electron({
+                          converterPath: electron.converters.PDF
+                        });
+                        console.log("Getting here");
+                        conversion({ html: resumeHTML }, function(err, result) {
+                            if (err) {
+                              return console.error(err);
+                            }
+                            console.log(result.numberOfPages);
+                            console.log(result.logs);
+                            result.stream.pipe(fs.createWriteStream(path.join(__dirname,'githubprofile.pdf')));
+                            conversion.kill(); 
+                          });
+                    })
+            })
+            .catch(err => console.log(err));
+    })
 }
 
+init();
 
-const colors = {
-    green: {
-        wrapperBackground: "#E6E1C3",
-        headerBackground: "#C1C72C",
-        headerColor: "black",
-        photoBorderColor: "#black"
+
+const colors = [
+   { // green 0
+      wrapperBackground: "#E6E1C3",
+      headerBackground: "#C1C72C",
+      headerColor: "black",
+      photoBorderColor: "#black"
     },
-    blue: {
-        wrapperBackground: "#5F64D3",
-        headerBackground: "#26175A",
-        headerColor: "white",
-        photoBorderColor: "#73448C"
+    { // blue 1
+      wrapperBackground: "#5F64D3",
+      headerBackground: "#26175A",
+      headerColor: "white",
+      photoBorderColor: "#73448C"
     },
-    pink: {
-        wrapperBackground: "#879CDF",
-        headerBackground: "#FF8374",
-        headerColor: "white",
-        photoBorderColor: "#FEE24C"
+    {
+     // pink 2
+      wrapperBackground: "#879CDF",
+      headerBackground: "#FF8374",
+      headerColor: "white",
+      photoBorderColor: "#FEE24C"
     },
-    red: {
-        wrapperBackground: "#DE9967",
-        headerBackground: "#870603",
-        headerColor: "white",
-        photoBorderColor: "white"
+    { // red 3
+      wrapperBackground: "#DE9967",
+      headerBackground: "#870603",
+      headerColor: "white",
+      photoBorderColor: "white"
     }
-};
-
-
-function generateHTML(data) {
+];
+  
+  function generateHTML(data) {
     return `<!DOCTYPE html>
-    <html lang="en">
-    
-    <head>
+  <html lang="en">
+     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <meta http-equiv="X-UA-Compatible" content="ie=edge" />
-        <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.8.1/css/all.css" />
+        <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.8.1/css/all.css"/>
         <link href="https://fonts.googleapis.com/css?family=BioRhyme|Cabin&display=swap" rel="stylesheet">
-        <title>Document</title>
-        <link rel="stylesheet" href="style.css">
-    
-    <body>
-        <div class="main">
-            <div class="wrapper">
-    
-                <div class="photo-header">
-                <img src="${data.imgUrl}.png" alt="Profile" height="50" width="50">
-                    <h1>Hi I'm ${data.name}, welcome to my page!</h1>
-                    <h2>${data.location}</h2>
-                </div>
-    
-                <div class="links-nav">
-                    <div class="nav-link">
-                    <br>
-                    <br>
-                    <button target="_blank" onclick="window.location.href = '${data.github}';">Go to Github Page</button>
-                    <button target="_blank" onclick="window.location.href = '${data.blog}';">Go to Blog</button>
-                    </div>
-                    <p>${data.bio}</p>
-                </div>
-            </div>
-            <div class="container">
-                <div class="row">
-                    <div class="col">
-                        <div class="card">Number of Public Repos: ${data.repoNum}</div>
-                    </div>
-                    <div class="col">
-                        <div class="card">Currently working at: ${data.company}</div>
-                    </div>
-                </div>
-            </div>
-            <div class="container">
-                <div class="row">
-                    <div class="col">
-                        <div class="card">Number of Followers: ${data.followers}</div>
-                    </div>
-                    <div class="col">
-                        <div class="card">Number of Following: ${data.following}</div>
-                    </div>
-                </div>
-            </div>
-            <div class="container">
-            <div class="row">
-                <div class="col">
-                    <div class="card"></div>
-                </div>
-            </div>
-        </div>
-        </div>
-    </body>
+        <title>Resume</title>
         <style>
             @page {
               margin: 0;
@@ -133,6 +144,7 @@ function generateHTML(data) {
            height: 100%;
            }
            .wrapper {
+             height: 500px;
            background-color: ${colors[data.color].wrapperBackground};
            padding-top: 100px;
            }
@@ -214,6 +226,7 @@ function generateHTML(data) {
            margin-top: 10px;
            }
            .container {
+             position: relative;
            padding: 50px;
            padding-left: 100px;
            padding-right: 100px;
@@ -251,191 +264,54 @@ function generateHTML(data) {
               zoom: .75; 
             } 
            }
-        </style>`
-}
-
-function CreateUser(username, color, repoNum, imgUrl, location, followers, following, company, name, github, blog, bio) {
-    this.username = username;
-    this.color = color;
-    this.repoNum = repoNum;
-    this.imgUrl = imgUrl;
-    this.location = location;
-    this.followers = followers;
-    this.following = following;
-    this.company = company;
-    this.name = name;
-    this.github = github;
-    this.blog = blog;
-    this.bio = bio;
-}
-
-async function init() {
-
-    try {
-        const answers = await promptUser();
-        const queryUrlRepo = `https://api.github.com/users/${answers.username}/repos?per_page=100`;
-
-        async function axiosRepos() {
-            try {
-                const response = await axios.get(queryUrlRepo);
-                const repoNames = response.data.map(function (repo) {
-                    return repo.name;
-                });
-                console.log(`Saved ${repoNames.length} repos`);
-                // console.log(response.data)
-                return repoNames.length
-            } catch (error) {
-                console.error(error);
-            }
-        }
-        axiosRepos();
-        let axiosResponseRepos = await axiosRepos();
-
-        const queryUrlImg = `https://api.github.com/users/${answers.username}/repos?per_page=100`;
-
-        async function axiosImg() {
-            try {
-                const response = await axios.get(queryUrlImg);
-                console.log(response.data[0].owner.avatar_url)
-                const imgTag = (response.data[0].owner.avatar_url)
-                return imgTag
-            } catch (error) {
-                console.error(error);
-            }
-        }
-        axiosImg();
-        let axiosResponseImg = await axiosImg();
-
-
-
-
-
-        const queryUrlProfile = `https://api.github.com/users/${answers.username}`;
-
-        async function axiosProf() {
-
-            try {
-
-                const response = await axios.get(queryUrlProfile);
-                const locTag = response.data.location;
-                const followersTag = response.data.followers;
-                const followingTag = response.data.following;
-                const companyTag = response.data.company;
-                const name = response.data.name;
-                const github = response.data.html_url;
-                const blog = response.data.blog;
-                const bio = response.data.bio;
-                // console.log(response.data)
-                const answersArray = [locTag, followersTag, followingTag, companyTag, name, github, blog, bio];
-
-                return answersArray;
-
-            } catch (error) {
-
-                console.error(error);
-
-            }
-
-        }
-
-
-        axiosProf();
-
-        let answersProf = await axiosProf();
-
-        console.log(answersProf)
-
-        let axiosResponseLoc = answersProf[0];
-        let axiosResponseFollowers = answersProf[1];
-        let axiosResponseFollowing = answersProf[2];
-        let axiosResponseCompany = answersProf[3];
-        let axiosResponseName = answersProf[4];
-        let axiosResponseGithub = answersProf[5];
-        let axiosResponseBlog = answersProf[6];
-        let axiosResponseBio = answersProf[7];
-
-
-
-        const queryUrlStars = `https://api.github.com/users/${answers.username}/starred`;
-        // {/owner}{/repo}
-
-        async function axiosStars() {
-
-            try {
-
-                const response = await axios.get(queryUrlStars);
-                // const locTag = response.data.location;
-                console.log(response.data)
-                // const starsArray = [locTag];
-
-                // return starsArray;
-
-            } catch (error) {
-
-                console.error(error);
-
-            }
-
-        }
-
-
-        axiosStars();
-
-        let answersStars = await axiosStars();
-
-        console.log(answersStars)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        const newUser = new CreateUser(
-            answers.username,
-            answers.color.toString(),
-            axiosResponseRepos,
-            axiosResponseImg,
-            axiosResponseLoc,
-            axiosResponseFollowers,
-            axiosResponseFollowing,
-            axiosResponseCompany,
-            axiosResponseName,
-            axiosResponseGithub,
-            axiosResponseBlog,
-            axiosResponseBio
-        )
-        // console.log(newUser)
-        // console.log(answers)
-
-        const indexFile = await generateHTML(newUser)
-
-        const browser = await puppeteer.launch();
-        const page = await browser.newPage();
-
-        await page.setContent(indexFile)
-        await page.emulateMedia("screen");
-        await page.pdf({
-            path: "Page.pdf",
-            format: "A4",
-            printBackground: true
-        });
-
-        await writeFileAsync("github-index.html", indexFile);
-
-        console.log("Successfully wrote to index-github.html");
-    } catch (err) {
-        console.log(err);
-    }
-}
-
-init();
+        </style>
+  
+        <body>
+          <header>
+          <div class="wrapper">
+            <div class='photo-header'>
+              <img src="${data.portPic}"><br>
+              <h1>Hi!</h1>
+              <h2>My name is ${data.name}</h2>
+              <div class="links-nav">
+                <a class="nav-link" href="https://www.google.com/maps/place/${data.location ? data.location.split(' ')[0] : ""}+${data.location ? data.location.split(' ')[1] : ""}">${data.location ? data.location : ""}</a>
+                <a class="nav-link" href="https://github.com/${data.username}">github</a>
+                <a class="nav-link" href="${data.blog}">blog</a>
+              </div>
+  
+            </div>
+          </header>
+  
+          <div class="container">
+            <div class="row">
+            <div class="col">
+                <h4>${data.bio}</h4>
+            </div>
+            </div>
+            <div class="row">
+              <div class='col card'>
+                <h2>Public repositories: </h1>
+                ${data.numOfRepo}
+              </div>
+  
+              <div class="col card">
+                <h2>Followers:</h1>
+                ${data.followers}
+              </div>
+            </div>
+  
+            <div class="row">
+              <div class="card col">
+                <h2>Stars:</h2>
+                ${data.stars}
+              </div>
+              <div class="card col">
+                <h2>Following:</h2>
+                ${data.followers}
+              </div>
+            </div>
+  
+          </div>
+  </body>
+        `
+          };
